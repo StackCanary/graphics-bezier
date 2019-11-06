@@ -1,0 +1,148 @@
+\documentclass{article}
+
+\title{Concurrency P1}
+\date{21/02/2019}
+\author{150008859}
+
+\setlength{\parskip}{1em}
+\setlength{\parindent}{0em}
+
+\usepackage{listings}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{graphicx}
+\usepackage{subfig}
+\usepackage{xcolor}
+
+\begin{document}
+\maketitle
+\newpage
+
+
+\section{Introduction}
+
+The aim of this practical was to implement a blocking and non-blocking version of a concurrent data structure which features a ``read, modify and write''. In addition to analysing the correctness and performance by running them on sequences of different operations called concurrently from several threads.
+
+
+\section{Design Decisions and Implementation}
+
+\subsection{Locking Account}
+
+\subsubsection*{Checking Balance}
+
+Checking the balance does not require blocking.
+
+\subsubsection*{Withdrawing Funds}
+
+However, to withdraw from the account a (blocking) lock must be acquired. 
+
+If unsufficient funds are present, the function is set to return false.
+
+Otherwise, the transaction takes place and the function is set to return true.
+
+Finally, the lock is released.
+
+The function returns.
+
+\subsubsection*{Depositing Funds}
+
+Depositing money is simply withdrawing a negative quanitity.
+
+\subsubsection*{Correctness Analysis}
+
+This technique is blocking as termination of a single thread could leave the system in a deadlock.
+
+The usage of the lock guarantees that the process of verifying the bank account contains sufficient funds and mutating the funds happens atomically.
+
+A mistake would be to use unique locks for withdrawing and depositing. However, it is possible to have funds disappear from the account when money is deposited in-between the ``read modify and write'' during a withdraw.
+
+An alternative technique would be to use Java's synchronized methods which use intrinsic locks provided by monitor objects. 
+
+\subsection{Lock-Free Account}
+
+A Java AtomicInteger is used as it implements CAS.
+
+\subsubsection*{Checking Balance}
+
+Checking the balance simply returns the value of the AtomicInteger. 
+
+\subsubsection*{Withdrawing Funds}
+
+Withdrawing involves a loop which reads the value of the account's funds.
+
+If the funds are insufficient false is returned immediately. 
+
+Otherwise, a CAS is applied to the funds.
+
+The CAS proceeds only if the fund's value was consistent with the value that was read during the sufficient funds test. Upon success, the function immediately returns false.
+
+Upon failure of a CAS, the loop repeats.
+
+\subsubsection*{Depositing Funds}
+
+Depositing money is simply withdrawing a negative quanitity.
+
+\subsubsection*{Correctness Analysis}
+
+This technique is lock-free as atleast one thread is guaranteed to make progress given sufficient time. In other words, system wide progress is guaranteed. In addition, killing any particular thread does not pose any risks for the other threads. 
+
+Suppose multiple threads wish to mutate the funds, they will verify the account contains enough funds. Each thread will attempt to CAS atomically. However, only one the first thread will succeed.
+
+CAS belonging to other threads will not succeed as the funds in the bank account do not match the expected value of the funds during the sufficient funds test. 
+
+The threads which fail will repeat the process until they succeed or fail due to insufficient funds.
+
+Hence its not possible for two threads to simultaneously mutate the funds. 
+
+A small performance increase exists, suppose two threads wish to withdraw and deposit but there are insufficient funds for withdrawing. In the locking version, only one thread can perform the sufficient funds test at a time. However in the lock-free version, the withdrawing thread can proceed to notice that there are insufficient funds and return false while the depositing thread can proceed to modify the funds. 
+
+\section{Performance Characteristics}
+
+\subsection*{Experiment Setup}
+
+
+An interesting comparison to make is that withdrawing and depositing is the consumer-producer problem in disguise. Hence, one aspect of the data structure's performance in a concurrent environment can be measured by modelling it as one.
+
+In this experiment I will vary the number of producer (depositing) threads and consumers (withdrawing) threads to measure performance. The number of producers and consumers will be identical. 
+
+Initially, there will be no funds in the bank account.
+
+The producers will deposit funds into the account, then the consumers will withdraw the funds from the account. There is no requirement for a withdraw operation to succeed.
+
+The exact testing parameters are a starting point of 1 thread, 10 steps between each measurement, 150 measurements and 20 repeats per measurement.
+
+\subsection*{Experiment Results}
+
+\begin{figure}[!ht]
+  \centering
+  \caption{The initial experiment results. \textcolor{blue}{Blocking}, \textcolor{red}{Non-Blocking}}
+  \centering
+  \includegraphics[width=\textwidth]{images/results.png}
+\end{figure}
+
+The results of the experiment suggests that a linear trend in which the time taken is directly proportional to the number of producers and consumers. In addition, that there is a small performance increase for the non-blocking algorithm. Perhaps this is due to the case earlier where I mentioned that threads are present which wish to withdraw and deposit funds, but there are insufficient funds so the withdrawing threads can concurrently verify that case and fail immediately. 
+
+There are spikes in performance for the non-blocking version. During these spikes, the performance of the blocking algorithm is much more stable and is faster than the non-blocking algorithm.
+
+An interesting hypothesis could be due to garbage collection and running out of heap space. 
+
+We can test this hypothesis by increasing the heap space of the JVM to 4GB by passing the ``-Xmx4096m'' flag.
+
+\begin{figure}[!ht]
+  \centering
+  \caption{The experiment results with more memory.}
+  \centering
+  \includegraphics[width=\textwidth]{images/stable.png}
+\end{figure}
+
+Interestingly, the spikes are no longer present and reveal the culprit behind the performance spikes.
+
+\section{Analysis of design and trade-offs}
+
+Although the performance difference is slight between the algorithm, for this particular data structure it appears as if choosing between the algorithms is not decided by the performance.
+
+However, considerations could be made between the choice of lock-free vs locking and this is due to the system wide progress guarantee. In a lock free system it is possible to terminate a thread without losing the system-wide progress guarantee. If a single thread manipulating the account strucure fails, the other threads will be unaffected. However in a locking system, a failing thread can cause a deadlock if acquired locks are not released before the point of failure.
+
+% https://stackoverflow.com/questions/5680869
+
+\end{document}
